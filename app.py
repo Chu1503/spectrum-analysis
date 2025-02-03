@@ -39,7 +39,7 @@ cases = {
 def load_spectra(file_path):
     try:
         data = pd.read_csv(file_path, sep=r'\s+', header=None, 
-                         names=['nm', 'percentage'], engine='python')
+                             names=['nm', 'percentage'], engine='python')
         data = data.apply(pd.to_numeric, errors='coerce').dropna()
         return data
     except Exception as e:
@@ -54,7 +54,11 @@ app.layout = html.Div([
         value=['Blank'],
         inline=True
     ),
-    html.Div(id='controls-container')
+    html.Div(id='controls-container'),
+    # Interval to trigger the clientside callback that reads window width
+    dcc.Interval(id='interval', interval=1000, n_intervals=0),
+    # Store to hold the window width
+    dcc.Store(id='window-size')
 ])
 
 def create_controls(case_key):
@@ -129,13 +133,15 @@ def sync_inputs(slider_values, input_values, click_data):
     [Output('spectra-plot', 'figure'),
      Output({'type': 'diff-output', 'case': ALL}, 'children')],
     Input({'type': 'cursor-slider', 'case': ALL, 'cursor': ALL}, 'value'),
-    State('case-selector', 'value')
+    State('case-selector', 'value'),
+    State('window-size', 'data')
 )
-def update_plot(slider_values, selected_cases):
+def update_plot(slider_values, selected_cases, window_width):
     fig = go.Figure()
     diff_outputs = []
     cursor_map = {}
 
+    # Map each case's cursors (assumes each case has two slider values)
     for i, case_key in enumerate(selected_cases):
         cursor_start = i * 2
         cursor_map[case_key] = {
@@ -199,15 +205,40 @@ def update_plot(slider_values, selected_cases):
         diff_output = f"Δλ = {abs(cursor2 - cursor1):.2f} nm, ΔI = {abs(i2 - i1):.2f}%"
         diff_outputs.append(diff_output)
 
+    # Decide on legend vertical position based on window width:
+    # For example, use y=-1.3 if width is less than 768 (mobile), else y=-0.3.
+    if window_width and window_width < 768:
+        legend_y = -1.0
+    else:
+        legend_y = -0.3
+
     fig.update_layout(
         title="Fluorescence Spectrum Analysis",
         xaxis_title="Wavelength (nm)",
         yaxis_title="Intensity (%)",
         hovermode="closest",
-        template="plotly_white"
+        template="plotly_white",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=legend_y,
+            xanchor="center",
+            x=0.5
+        )
     )
     
     return fig, diff_outputs
+
+# Clientside callback to update the window width stored in dcc.Store.
+app.clientside_callback(
+    """
+    function(n_intervals) {
+        return window.innerWidth;
+    }
+    """,
+    Output('window-size', 'data'),
+    Input('interval', 'n_intervals')
+)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, debug=False)
