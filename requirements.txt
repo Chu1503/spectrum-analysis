@@ -1,5 +1,5 @@
 dash
-plotly
 flask
-pandas
 gunicorn
+plotly
+numpy
